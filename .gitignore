@@ -35,7 +35,7 @@ ENV/
 
 # Jupyter Notebook
 .ipynb_checkpoints
-*.ipynb
+!*.ipynb
 
 # Data files (excluded - users can collect their own or train models)
 MP_Data/
@@ -76,6 +76,7 @@ presentation/
 !README.md
 !models/README_MODELS.md
 !SETUP_GUIDE.md
+!installation_guide.md
 
 # Environment variables
 .env
