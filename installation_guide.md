@@ -425,5 +425,5 @@ For additional assistance, refer to the troubleshooting section above or review 
 ---
 
 **Author**: Chandra Bollineni  
-**Last Updated**: December 6, 2025  
+**Last Updated**: December 6th, 2025  
 **Project**: Communicare - Machine Learning-Powered Sign Language Recognition and Fall Detection System
