@@ -1,0 +1,89 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Data files (excluded - users can collect their own or train models)
+MP_Data/
+Fall_Data/
+*.npy
+*.jpg
+*.png
+*.jpeg
+
+# Model files - INCLUDED so detection works without training
+# models/*.keras  (commented out - allow model files)
+# models/*.h5     (commented out - allow model files)
+# models/*.pkl    (commented out - allow model files)
+*.pt              # YOLOv8 model (excluded - auto-downloads on first run)
+*.weights
+*.pb
+
+# Logs
+Logs/
+*.log
+
+# Backup files
+backup/
+*.bak
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Presentation files (optional - remove if you want to include)
+presentation/
+*.pptx
+*.ppt
+
+# Documentation (optional - remove if you want to include)
+*.md
+!README.md
+!models/README_MODELS.md
+!SETUP_GUIDE.md
+
+# Environment variables
+.env
+.env.local
+config.ini
+
+# Email credentials (sensitive)
+*_credentials.json
+*_config.json
+config.py
+
