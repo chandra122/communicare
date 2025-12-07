@@ -75,8 +75,8 @@ presentation/
 *.md
 !README.md
 !models/README_MODELS.md
-!SETUP_GUIDE.md
 !installation_guide.md
+!project_flow.md
 
 # Environment variables
 .env
