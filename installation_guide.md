@@ -407,7 +407,7 @@ Communicare/
 ├── sign_language_recognition_model_training.ipynb
 ├── Fall_Detection_Model_Training.ipynb
 ├── requirements.txt
-└── SETUP_GUIDE.md
+└── installation_guide.md
 ```
 
 ---
@@ -425,5 +425,5 @@ For additional assistance, refer to the troubleshooting section above or review 
 ---
 
 **Author**: Chandra Bollineni  
-**Last Updated**: December 6th, 2025  
+**Last Updated**: December 7th, 2025  
 **Project**: Communicare - Machine Learning-Powered Sign Language Recognition and Fall Detection System

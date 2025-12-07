@@ -20,33 +20,46 @@ from tensorflow.keras.models import load_model  # TensorFlow/Keras: Deep learnin
 
 
 # CONFIGURATION
+# These settings control how the detection system works
+# You can adjust these values to change the system's behavior
 
 # Directory where the trained model(s) and label file are stored
+# The script will look for model files in this folder
 MODEL_DIR = "models"
 
-# Feature configuration:
-# - If True: using pose + face + both hands (1662 features)
-# - If False: using pose + both hands only (258 features)
+# Feature configuration: choose whether to use face features
+# - If True: uses pose + face + both hands (1662 features total)
+# - If False: uses pose + both hands only (258 features total)
+# I set this to False because face features aren't needed for sign language
 USE_FACE_FEATURES = False
 
+# Set the number of features based on the configuration above
+# This must match what the model was trained with
 if USE_FACE_FEATURES:
     NUM_KEYPOINTS = 1662
 else:
     NUM_KEYPOINTS = 258
 
-# Inference behavior
-THRESHOLD = 0.5           # Minimum confidence to accept a prediction
-PREDICTION_INTERVAL = 3   # Running the model every N frames to save compute
-SMOOTHING_WINDOW = 5      # Number of consistent predictions required
+# Inference behavior settings
+THRESHOLD = 0.5           # Minimum confidence (0.0 to 1.0) to show a detection
+                          # Lower values = more detections but more false positives
+                          # Higher values = fewer detections but more accurate
+PREDICTION_INTERVAL = 3   # Run the model every 3 frames instead of every frame
+                          # This saves computation while still being fast enough
+SMOOTHING_WINDOW = 5      # Number of consecutive predictions that must agree
+                          # This prevents flickering when model is uncertain
 
 # Email alert configuration
+# Set EMAIL_ENABLED to False if you don't want email notifications
 EMAIL_ENABLED = True
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-EMAIL_SENDER = "bollinenichandrasekhar11@gmail.com"      # Email Address of the sender
-EMAIL_PASSWORD = "Chandra@11"       # App password if using Gmail
-EMAIL_RECIPIENT = "bollinenichandrasekhar11@gmail.com"    # Where alerts go Emergency Alerts
-SIGN_EMAIL_COOLDOWN = 10.0                 # Seconds between alerts for same sign
+SMTP_SERVER = "smtp.gmail.com"      # Gmail's SMTP server address
+SMTP_PORT = 587                     # Port for TLS encryption
+EMAIL_SENDER = "youremail@gmail.com"      # Your email address
+EMAIL_PASSWORD = "gmailapppassword"       # Gmail App Password (not your regular password)
+                                    # Get this from Google Account settings
+EMAIL_RECIPIENT = "emergencyemail@gmail.com"    # Where to send alerts
+SIGN_EMAIL_COOLDOWN = 10.0         # Wait 10 seconds between emails for the same sign
+                                    # This prevents spam if the same sign is detected repeatedly
 
 # MediaPipe setup
 mp_holistic = mp.solutions.holistic
@@ -291,7 +304,9 @@ def realtime_detection():
 
     print("REAL-TIME SIGN DETECTION")
 
-    # Candidates for model filenames so I can reuse this script: sign_lstm_final_single.keras, sign_lstm_best_single.keras, sign_lstm_final_single.h5, sign_lstm_best_single.h5, sign_lstm_final.keras, sign_lstm_best.keras, sign_lstm_final.h5, sign_lstm_best.h5
+    # List of possible model file names to check
+    # The script will try each one until it finds a file that exists
+    # This allows the script to work with different model naming conventions
     MODEL_PATHS = [
         os.path.join(MODEL_DIR, 'sign_lstm_final_single.keras'),
         os.path.join(MODEL_DIR, 'sign_lstm_best_single.keras'),
@@ -303,9 +318,8 @@ def realtime_detection():
         os.path.join(MODEL_DIR, 'sign_lstm_best.h5'),
     ]
 
-    # Candidates for the label/“actions” file: sign_actions_single.pkl and 
-    # sign_actions.pkl for single and multiple gestures respectively for 
-    # single gestures only
+    # List of possible label file names to check
+    # The label file maps class numbers to sign names (e.g., 0="help", 1="water")
     ACTIONS_PATHS = [
         os.path.join(MODEL_DIR, 'sign_actions_single.pkl'),
         os.path.join(MODEL_DIR, 'sign_actions.pkl'),
@@ -313,17 +327,17 @@ def realtime_detection():
 
     model = None
     actions = None
-    sequence_length = 30  # default; will be overwritten from model
+    sequence_length = 30  # Default value, will be updated from the model
 
-    # Loading the model and the gesture labels
-    # Load trained LSTM model (TensorFlow/Keras format)
-    # Reference: TensorFlow/Keras model loading (Abadi et al., 2016; Chollet, 2015)
+    # Load the trained LSTM model
+    # Try each possible path until we find a model file that exists
     for model_path in MODEL_PATHS:
         if os.path.exists(model_path):
             print(f"Loading model from: {model_path}")
             model = load_model(model_path)
-            # Input shape is (batch, T, F), so index 1 is sequence length T
-            # T = temporal sequence length, F = feature dimensions
+            # Get the sequence length from the model's input shape
+            # Model input shape is (batch, sequence_length, features)
+            # Index 1 tells us how many frames the model expects
             sequence_length = model.input_shape[1]
             print(f"Model loaded. Sequence length: {sequence_length}")
             break
@@ -332,18 +346,23 @@ def realtime_detection():
         print("No model found. Train and save a model under MODEL_DIR before running this script.")
         return
 
-    # Loading the gesture labels from the file
+    # Load the gesture labels from the pickle file
+    # This file contains the list of sign names the model can recognize
     for actions_path in ACTIONS_PATHS:
         if os.path.exists(actions_path):
             with open(actions_path, 'rb') as f:
                 actions_data = pickle.load(f)
 
-            # Support dict, list, or other array-like formats
+            # The label file can be saved in different formats
+            # Convert it to a numpy array for easy indexing
             if isinstance(actions_data, dict):
+                # If it's a dictionary, convert to array
                 actions = np.array([actions_data[k] for k in sorted(actions_data.keys())])
             elif isinstance(actions_data, list):
+                # If it's already a list, just convert to array
                 actions = np.array(actions_data)
             else:
+                # Other formats, try to convert to array
                 actions = np.array(actions_data)
 
             print(f"Loaded actions: {actions}")
@@ -353,32 +372,45 @@ def realtime_detection():
         print("Actions file not found in MODEL_DIR (e.g., sign_actions.pkl).")
         return
 
-    # Initializing the webcam and setting the frame width and height
+    # Initialize the webcam
+    # VideoCapture(0) opens the default camera (usually the built-in webcam)
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         print("Error: Could not access webcam.")
         return
 
+    # Set camera resolution to 640x480
+    # Lower resolution = faster processing, which is good for real-time use
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-    # Initialize MediaPipe Holistic for pose, face, and hand detection
-    # Reference: MediaPipe Holistic (Lugaresi et al., 2019)
+    # Initialize MediaPipe Holistic detector
+    # This will detect pose, face, and hand landmarks in each frame
+    # min_detection_confidence: how confident MediaPipe needs to be to detect landmarks
+    # min_tracking_confidence: how confident it needs to be to keep tracking
+    # Lower values = more detections but might be less accurate
     holistic = mp_holistic.Holistic(
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5
     )
 
-    # Rolling state for inference: sequence = [] - sequence = [] is a function that maintains a rolling window of the last T frames of keypoints    
-    sequence = []           # last T keypoint vectors: sequence = [] is a function that maintains a rolling window of the last T frames of keypoints
-    prediction_buffer = []  # last N predicted indices: prediction_buffer = [] is a function that maintains a rolling window of the last N predicted indices
-    confidence_buffer = []  # last N max confidences: confidence_buffer = [] is a function that maintains a rolling window of the last N max confidences
-    current_detection = None # current detection: current_detection = None is a function that maintains the current detection
-    current_confidence = 0.0 # current confidence: current_confidence = 0.0 is a function that maintains the current confidence
+    # These variables store the current state of detection
+    # I keep a rolling window of the last 30 frames of keypoints for the LSTM model
+    sequence = []           # Stores the last 30 frames of keypoint data
+    
+    # I use these buffers to smooth out predictions and avoid flickering
+    # The model might predict different signs in consecutive frames, so I average them
+    prediction_buffer = []  # Stores the last 5 predicted sign indices
+    confidence_buffer = []  # Stores the last 5 confidence scores
+    
+    # Current detection result that we show on screen
+    current_detection = None # The sign that's currently detected (e.g., "help", "water")
+    current_confidence = 0.0 # How confident the model is (0.0 to 1.0)
 
-    # Email + history bookkeeping
-    sign_last_email_time = {}  # sign -> last email timestamp
-    sign_text_buffer = []      # "[timestamp] SIGN_NAME": "[timestamp] SIGN_NAME" is a function that maintains the sign text buffer
+    # Email tracking to prevent spam
+    # I track when I last sent an email for each sign, so I don't send too many
+    sign_last_email_time = {}  # Maps sign name to timestamp of last email sent
+    sign_text_buffer = []      # History of all detected signs with timestamps
 
     frame_count = 0
 
@@ -390,17 +422,23 @@ def realtime_detection():
         if not ret:
             break
 
-        # Mirroring the frame so it behaves like a mirror for the user: frame = cv2.flip(frame, 1)
+        # Flip the frame horizontally so it feels like looking in a mirror
+        # This makes it easier for users to see themselves naturally
         frame = cv2.flip(frame, 1)
 
-        # Running MediaPipe Holistic and rendering landmarks: image, results = mediapipe_detection(frame, holistic)
+        # Process the frame with MediaPipe to detect hands, pose, and face
+        # This extracts all the keypoints we need for sign language recognition
         image, results = mediapipe_detection(frame, holistic)
+        
+        # Draw the detected landmarks on the frame so users can see what's being tracked
         draw_styled_landmarks(image, results)
 
-        # Flattening landmarks to a feature vector: keypoints = extract_keypoints(results)
+        # Convert MediaPipe results into a flat array of numbers
+        # This is the format the LSTM model expects (258 features per frame)
         keypoints = extract_keypoints(results)
 
-        # True if at least one hand is in the frame: hands_detected = (results.left_hand_landmarks is not None or results.right_hand_landmarks is not None)
+        # Check if at least one hand is visible in the frame
+        # We need hands to be visible to detect sign language gestures
         hands_detected = (
             results.left_hand_landmarks is not None or
             results.right_hand_landmarks is not None
@@ -408,61 +446,80 @@ def realtime_detection():
 
         frame_count += 1
 
+        # Update the sequence buffer only when hands are visible
         if hands_detected:
-            # Updating the temporal sequence window: sequence.append(keypoints)
+            # Add this frame's keypoints to our sequence buffer
             sequence.append(keypoints)
+            # Keep only the last 30 frames (remove older frames)
+            # This creates a sliding window of the most recent 1 second of video
             sequence = sequence[-sequence_length:]
         else:
-            # Resetting the temporal state when hands disappear: sequence = []
+            # If hands disappear, clear everything and start fresh
+            # This prevents showing old detections when no one is signing
             sequence = []
             prediction_buffer = []
             confidence_buffer = []
             current_detection = None
 
-        # Running the model only every PREDICTION_INTERVAL frames: if frame_count % PREDICTION_INTERVAL == 0:       
+        # Run the LSTM model every 3 frames instead of every frame
+        # This saves computation while still being fast enough for real-time use
         if frame_count % PREDICTION_INTERVAL == 0:
-            # Checking if the sequence length is equal to the sequence length and hands are detected: if len(sequence) == sequence_length and hands_detected:
+            # Only make a prediction if we have a full sequence (30 frames) and hands are visible
+            # The LSTM needs exactly 30 frames to work properly
             if len(sequence) == sequence_length and hands_detected:
-                # Forward pass through LSTM model: (1, T, F), e.g., (1, 30, 258)
-                # LSTM processes temporal sequences for gesture classification
-                # Reference: LSTM for sequence modeling (Hochreiter & Schmidhuber, 1997)
+                # Run the sequence through the LSTM model to get predictions
+                # The model outputs probabilities for each sign class
+                # Shape: (1, 30, 258) -> (1, 30 frames, 258 features per frame)
                 probs = model.predict(np.expand_dims(sequence, axis=0), verbose=0)[0]
+                
+                # Find which sign has the highest probability
                 predicted_idx = int(np.argmax(probs))
                 predicted_action = actions[predicted_idx]
                 confidence = float(probs[predicted_idx])
 
-                # Updating smoothing buffers: prediction_buffer.append(predicted_idx)
+                # Add this prediction to our smoothing buffers
+                # We keep the last 5 predictions to average them out
                 prediction_buffer.append(predicted_idx)
                 confidence_buffer.append(confidence)
-                # Keeping only the last SMOOTHING_WINDOW predictions: prediction_buffer = prediction_buffer[-SMOOTHING_WINDOW:]
+                
+                # Keep only the last 5 predictions (remove older ones)
+                # This creates a sliding window for smoothing
                 prediction_buffer = prediction_buffer[-SMOOTHING_WINDOW:]
                 confidence_buffer = confidence_buffer[-SMOOTHING_WINDOW:]
 
-                # Temporal smoothing: require last N predictions to agree
-                # This reduces prediction noise and improves stability
-                # Reference: Temporal smoothing in sequence classification (Graves, 2012)
+                # Temporal smoothing: only show a detection if the last 5 predictions all agree
+                # This prevents flickering when the model is uncertain
+                # For example, if predictions go: "help", "water", "help", "help", "help"
+                # We won't show anything until we get 5 consistent "help" predictions
                 if len(prediction_buffer) >= SMOOTHING_WINDOW:
+                    # Check if all 5 recent predictions are the same
                     unique_preds = np.unique(prediction_buffer)
                     if len(unique_preds) == 1:
+                        # All predictions agree, so calculate average confidence
                         avg_conf = float(np.mean(confidence_buffer))
+                        
+                        # Only show detection if confidence is above threshold (0.5)
+                        # This filters out low-confidence predictions
                         if avg_conf > THRESHOLD:
                             current_detection = predicted_action
                             current_confidence = avg_conf
 
-                            # Per-sign email cooldown
+                            # Check if we should send an email for this detection
+                            # We use a cooldown period to prevent spam
                             now = time.time()
                             last_time = sign_last_email_time.get(current_detection, 0.0)
 
+                            # Only send email if enough time has passed since last email for this sign
                             if now - last_time > SIGN_EMAIL_COOLDOWN:
                                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                                 sign_text_buffer.append(f"[{timestamp}] {current_detection}")
 
-                                # Treat some labels as “emergency” to adjust email tone
+                                # Some signs are emergencies and need urgent email alerts
+                                # Regular signs get normal email subject, emergencies get "URGENT"
                                 emergency_signs = [
                                     'emergency', 'help', 'pain', 'hospital',
                                     'ambulance', 'fire', 'heart_attack'
                                 ]
-                                # Checking if the current detection is an emergency sign: if current_detection.lower() in emergency_signs:
                                 is_emergency = current_detection.lower() in emergency_signs
 
                                 if is_emergency:
@@ -475,48 +532,53 @@ def realtime_detection():
                                 send_email(subject, body)
                                 sign_last_email_time[current_detection] = now
                         else:
+                            # Confidence too low, don't show detection
                             current_detection = None
                     else:
+                        # Predictions don't agree, don't show anything yet
                         current_detection = None
                 else:
+                    # Not enough predictions yet, keep waiting
                     current_detection = None
 
-        # Visual overlays 
+        # Display detection results on the video frame
+        # Show the detected sign name and confidence score
 
-        # Drawing the main detection banner at the top: if current_detection:
         if current_detection:
+            # Display the detected sign name in large text at the top center
             label_text = current_detection.upper()
             font_scale = 1.5
             thickness = 3
 
+            # Calculate text size to center it properly
             (text_w, text_h), baseline = cv2.getTextSize(
                 label_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness
             )
-            x = (image.shape[1] - text_w) // 2
-            y = 50
+            x = (image.shape[1] - text_w) // 2  # Center horizontally
+            y = 50  # Position near top
 
-            # Drawing the background rectangle: cv2.rectangle(image, (x - 10, y - text_h - 10), (x + text_w + 10, y + baseline + 10), (0, 255, 0), thickness=-1)
+            # Draw a green background rectangle behind the text for better visibility
             cv2.rectangle(
                 image,
                 (x - 10, y - text_h - 10),
                 (x + text_w + 10, y + baseline + 10),
-                (0, 255, 0),
-                thickness=-1
+                (0, 255, 0),  # Green color
+                thickness=-1  # Filled rectangle
             )
 
-            # Drawing the label text: cv2.putText(image, label_text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness, cv2.LINE_AA)
+            # Draw the sign name text in black on the green background
             cv2.putText(
                 image,
                 label_text,
                 (x, y),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 font_scale,
-                (0, 0, 0),
+                (0, 0, 0),  # Black text
                 thickness,
                 cv2.LINE_AA
             )
 
-            # Drawing the confidence text: cv2.putText(image, conf_str, (x + text_w // 2 - 20, y + text_h + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+            # Show confidence percentage below the sign name
             conf_str = f"{current_confidence * 100:.0f}%"
             cv2.putText(
                 image,
@@ -524,12 +586,13 @@ def realtime_detection():
                 (x + text_w // 2 - 20, y + text_h + 25),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
-                (255, 255, 255),
+                (255, 255, 255),  # White text
                 1,
                 cv2.LINE_AA
             )
 
-        # Short history of recent detections near the bottom: if sign_text_buffer:
+        # Show a history of the last 3 detected signs at the bottom
+        # This helps users see what signs were recognized recently
         if sign_text_buffer:
             recent = [s.split("] ")[1] for s in sign_text_buffer[-3:]]
             history_text = "Detected Signs: " + ", ".join(recent)
@@ -539,11 +602,13 @@ def realtime_detection():
                 (10, image.shape[0] - 60),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
-                (255, 255, 0),
+                (255, 255, 0),  # Yellow text
                 1
             )
 
-        # Sequence buffer status (helps debug whether the window fills correctly): status = f"Buffer: {len(sequence)}/{sequence_length}"
+        # Show how many frames we have in the buffer
+        # This helps users understand when the system is ready to make predictions
+        # Buffer needs to be 30/30 before predictions start
         status = f"Buffer: {len(sequence)}/{sequence_length}"
         cv2.putText(
             image,
@@ -551,17 +616,20 @@ def realtime_detection():
             (10, image.shape[0] - 40),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.5,
-            (255, 255, 255),
+            (255, 255, 255),  # White text
             1
         )
 
+        # Display the video frame with all overlays
         cv2.imshow("Real-Time Sign Detection", image)
 
-        # Pressing 'q' to exit the loop: if cv2.waitKey(10) & 0xFF == ord('q'): break
+        # Check if user pressed 'q' to quit
+        # waitKey(10) waits 10 milliseconds for a key press
         if cv2.waitKey(10) & 0xFF == ord('q'):
             break
 
-    # Cleaning up resources: releasing the webcam and closing the windows: cap.release() and cv2.destroyAllWindows() and holistic.close()
+    # Clean up: release camera and close all windows
+    # This is important to free up resources properly
     cap.release()
     cv2.destroyAllWindows()
     holistic.close()

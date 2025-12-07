@@ -159,15 +159,15 @@ else:
     sequence_counter = 0
     print("\nStarting fresh collection (no existing sequences).")
 
-# Recording and buffer state
-recording = False           # manual recording flag
-current_sequence = []       # frames for the current manual sequence
-frame_count = 0
+# These variables track the recording state
+recording = False           # True when we're currently recording a sequence
+current_sequence = []       # Stores keypoints for the sequence we're recording
+frame_count = 0             # Counts frames in the current sequence
 
-# Burst mode: automatically record full sequences at intervals
-burst_mode = False
-burst_interval = 2.0        # seconds between automatic sequences
-last_burst_time = datetime.now().timestamp()
+# Burst mode: automatically records sequences without pressing SPACE each time
+burst_mode = False          # When True, sequences are recorded automatically
+burst_interval = 2.0        # Wait 2 seconds between automatic recordings
+last_burst_time = datetime.now().timestamp()  # Track when we last recorded
 
 # Main loop: capture frames and save sequences
 print("\nStarting camera feed for data collection...")
@@ -202,14 +202,15 @@ while True:
     if results.right_hand_landmarks:
         mp_draw.draw_landmarks(frame, results.right_hand_landmarks, mp_holistic.HAND_CONNECTIONS)
 
-    # Manual recording mode
+    # Manual recording mode: user presses SPACE to start recording
     if recording:
-        # Convert current frame to keypoints and append
+        # Extract keypoints from this frame and add to our sequence
         keypoints = extract_keypoints(results)
         current_sequence.append(keypoints)
         frame_count += 1
 
-        # Once I hit sequence_length, I write the whole sequence to disk
+        # Once we've collected 30 frames, save the entire sequence to disk
+        # Each sequence is saved in its own folder with numbered .npy files
         if frame_count >= sequence_length:
             sequence_dir = os.path.join(data_dir, current_class, str(sequence_counter))
             os.makedirs(sequence_dir, exist_ok=True)
@@ -230,11 +231,14 @@ while True:
             if burst_mode:
                 last_burst_time = datetime.now().timestamp()
 
-    # Burst mode (auto record)
+    # Burst mode: automatically records sequences at regular intervals
+    # This is useful when you want to collect many sequences quickly
     if burst_mode and not recording:
         current_time = datetime.now().timestamp()
+        # Check if enough time has passed since last recording
         if current_time - last_burst_time >= burst_interval:
-            # Require at least pose or hand landmarks to start a burst sequence
+            # Only start recording if we can see hands or body
+            # This prevents recording empty frames
             if results.pose_landmarks or results.left_hand_landmarks or results.right_hand_landmarks:
                 recording = True
                 current_sequence = []
