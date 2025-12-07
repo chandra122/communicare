@@ -88,3 +88,6 @@ config.ini
 *_config.json
 config.py
 
+# Yolo Model Files
+yolov8n-pose.pt
+
